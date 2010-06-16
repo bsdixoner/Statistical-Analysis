@@ -224,28 +224,36 @@ function statistical_analysis_page($stat_type, $account = NULL, $set_title = FAL
 				
 			case 'trending': //Trending Statistics
 				//By default show the current month
-				$sql = "select unix_timestamp(start_date) as start_date,unix_timestamp(end_date) as end_date,blogs_posted,comments_posted,statuses_posted,votes_casted,vote_average from statistical_analysis where year(start_date) = year(CURDATE()) and month(start_date) = month(curdate()) or month(end_date) = month(curdate())";
-				$result = db_query($sql);
-				while ($row = db_fetch_object($result)) {
-					$start = format_date($row->start_date, 'custom', 'm/j' );
-					$end = format_date($row->end_date, 'custom', 'm/j' );
-					$week = $start . '-' . $end;
-					$blogs = $row->blogs_posted;
-					$comments = $row->comments_posted;
-					$statuses = $row->statuses_posted;
-					$votes = $row->votes_casted;
+				if ($charting) {
+					$sql = "select unix_timestamp(start_date) as start_date,unix_timestamp(end_date) as end_date,blogs_posted,comments_posted,statuses_posted,votes_casted,vote_average from statistical_analysis where year(start_date) = year(CURDATE()) and month(start_date) = month(curdate()) or month(end_date) = month(curdate())";
+					$result = db_query($sql);
+					while ($row = db_fetch_object($result)) {
+						$start = format_date($row->start_date, 'custom', 'm/j' );
+						$end = format_date($row->end_date, 'custom', 'm/j' );
+						$week = $start . '-' . $end;
+						$blogs_posted = $row->blogs_posted;
+						$comments_posted = $row->comments_posted;
+						$statuses_posted = $row->statuses_posted;
+						$votes_posted = $row->votes_casted;
+						
+						$blogs_holder[] = array('#value' => $blogs_posted, '#label' => $week);
+						$comments_holder[] = array('#value' => $comments_posted, '#label' => $week);
+						$statuses_holder[] = array('#value' => $statuses_posted, '#label' => $week);
+						$votes_holder[] = array('#value' => $votes_posted, '#label' => $week);
+					}
 					
-					$blogs_holder[] = array('#value' => $blogs, '#label' => $week);
-					$comments_holder[] = array('#value' => $comments, '#label' => $week);
-					$statuses_holder[] = array('#value' => $statuses, '#label' => $week);
-					$votes_holder[] = array('#value' => $votes, '#label' => $week);
+					//Make charts
+					$output .= generate_line_chart('Blog Trends', 200, 450, $blogs_holder);
+					$output .= generate_line_chart('Comment Trends', 200, 450, $comments_holder);
+					if ($statuses) {
+						$output .= generate_line_chart('Status Trends', 200, 450, $statuses_holder);
+					}
+					if ($ratings) {
+						$output .= generate_line_chart('Vote Trends', 200, 450, $votes_holder);
+					}
+				} else {
+					$output .= "Charts must be enabled for trending data";
 				}
-				
-				//Make charts
-				$output .= generate_line_chart('Blog Trends', 200, 450, $blogs_holder);
-				$output .= generate_line_chart('Comment Trends', 200, 450, $comments_holder);
-				$output .= generate_line_chart('Status Trends', 200, 450, $statuses_holder);
-				$output .= generate_line_chart('Vote Trends', 200, 450, $votes_holder);
 
 				break;
 			  		
