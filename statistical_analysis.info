@@ -1,0 +1,8 @@
+;$Id$
+name = "Statistical Analysis"
+description = "Collect and analysis statistics within a Drupal website"
+package = "Statistics"
+core = 6.x
+version = 6.x-1.0
+dependencies[] = comment
+dependencies[] = blog

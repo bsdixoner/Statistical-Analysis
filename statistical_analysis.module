@@ -1,0 +1,434 @@
+<?php
+// $Id$
+
+//Require lib portion to get shared functions
+require_once ( dirname(__FILE__) . '/statistical_analysis.lib.inc');
+require_once ( dirname(__FILE__) . '/statistical_analysis.pages.inc');
+
+/*
+ * Implementation of hook_block
+ */
+function statistical_analysis_block($op='list', $delta=0, $edit=array()) {
+
+	switch ($op) {
+		case 'list':
+     		$blocks[0]['info'] = t('Statistical Analysis: Top Bloggers');
+      		$blocks[1]['info'] = t('Statistical Analysis: Recommendations');
+      		$blocks[2]['info'] = t('Statistical Analysis: Current Week');
+      		return $blocks;
+    	case 'configure':
+      		$form = array();
+      		if ($delta == 0) {
+        		$form['statistical_analysis_contributor_amount'] = array(
+          			'#type' => 'textfield',
+          			'#title' => t('Amount of Contributors'),
+          			'#size' => 20,
+          			'#description' => t('Amount of contributors to show in the block'),
+          			'#default_value' => variable_get('statistical_analysis_contributor_amount',  t('5')),
+        		);
+      		}
+      		return $form;
+    	case 'save':
+      		if ($delta == 0) {
+        		variable_set('statistical_analysis_contributor_amount', $edit['statistical_analysis_contributor_amount']);
+      		}
+      		return;
+    	case 'view': default:
+      		switch ($delta) {
+        		case 0:
+          			$block['subject'] = t('Top Bloggers');
+          			$block['content'] = statistical_analysis_block_content(0);
+          			break;
+        		case 1:
+          			$block['subject'] = t('Recommendations');
+          			$block['content'] = statistical_analysis_block_content(1);
+          			break;
+        		case 2:
+          			$block['subject'] = t('Current Week');
+          			$block['content'] = statistical_analysis_block_content(2);
+          			break;
+      		}
+      		return $block;
+  	}
+}
+
+/*
+ * Block content
+ */
+function statistical_analysis_block_content($type) {
+	switch ($type) {
+		case 0:
+			$contrib_amount = variable_get('statistical_analysis_contributor_amount', 5);
+			$content = get_top_contributors('blog', $contrib_amount);
+			break;
+		case 1:
+//			$content = "Fill in later";
+			break;
+		case 2:
+			global $user;
+			if ($user->uid != 0) {
+				$content = statistical_analysis_page('weekly', $account = $user, $set_title = FALSE);
+			} else {
+				$content = "";
+			}
+			break;
+	}
+	return $content;
+}
+
+/*
+ * Implementation of hook_perm()
+ */
+function statistical_analysis_perm() {
+	return array('access statistical_analysis','administer statistical_analysis');
+}
+
+/*
+ * Implementation of hook_help()
+ */
+function statistical_analysis_help($path, $arg) {
+	switch($path) {
+		case 'admin/help#statistical_analysis':
+			$output = t('This module uses collected information and algorithms to provide insight into user actions based on posting/reading habits.');
+			return $output;
+	}
+}
+
+/*
+ * Implementation of hook_cron()
+ */
+function statistical_analysis_cron() {
+	$last_time = variable_get('statistical_analysis_next_week', '0');
+	$time = time();
+	$date = format_date($time, 'custom', 'Y-m-j' );
+	
+	if($last_time == 0) { //reached 7 days of collection, reset the time and store it
+		$current_week = $date;
+		$next_week = strtotime ( '+1 week' , strtotime ( $date ) ) ;
+		$next_week = date ( 'Y-m-j' , $next_week );
+		variable_set('statistical_analysis_current_week', $current_week);
+		variable_set('statistical_analysis_next_week', $next_week);
+	} else if ($last_time == $date) {
+		//Get a snapshot of the current weekly statistics
+		$start = variable_get('statistical_analysis_current_week', '0');
+		$end = variable_get('statistical_analysis_next_week', '0');
+		$blog_count = get_counts('weekly', 'blog', 'any');
+		$comment_count = get_counts('weekly', 'comment', 'any');
+		$status_count = get_counts('weekly', 'status', 'any');
+		$read_count = get_counts('weekly', 'read', 'any');
+		$vote_count = get_counts('weekly', 'vote', 'any');
+		
+		$sql = "INSERT INTO {statistical_analysis} VALUES ('','$start','$end',$blog_count,$comment_count,$status_count,$read_count,$vote_count,0)";
+		db_query($sql);
+		
+		//Mail a report to the admin
+		$to = variable_get('statistical_analysis_recipient_email',FALSE);
+		$sender_email = variable_get('statistical_analysis_sender_email',FALSE);
+		$headers = "From: " . $sender_email . "\r\nReply-To: " . $sender_email;
+		$subject = variable_get('statistical_analysis_email_subject',FALSE);
+		$email_subject = str_replace('!WEEK_START',$start,$email_subject);
+		$email_subject = str_replace('!WEEK_END',$end,$email_subject);
+		$body .= "Total number of blogs = $blog_count \n";
+		$body .= "Total number of comments = $comment_count \n";
+		$body .= "Total number of statuses = $status_count \n";
+		$body .= "Total number of votes = $vote_count \n";
+		@mail($to, $email_subject, $body, $headers);
+		
+		//Reset information
+		$current_week = $date;
+		$next_week = strtotime ( '+1 week' , strtotime ( $date ) ) ;
+		$next_week = date ( 'Y-m-j' , $next_week );
+		variable_set('statistical_analysis_current_week', $current_week);
+		variable_set('statistical_analysis_next_week', $next_week);
+	} else {
+		//Sit and wait. Patience is a virtue.
+		$start = variable_get('statistical_analysis_current_week', '0');
+		$end = variable_get('statistical_analysis_next_week', '0');
+	}
+}
+
+/*
+ * Implementation of hook_menu()
+ */
+function statistical_analysis_menu() {
+	$items = array ();
+	$items['admin/settings/statistical_analysis'] = array (
+		'title' => t('Statistical Analysis'),
+		'description' => t('Administer settings and other options for the module'),
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('statistical_analysis_settings'),
+		'access arguments' => array('administer statistical_analysis'),
+		'type' => MENU_NORMAL_ITEM,
+	);
+ 	$items['admin/reports/statistical_analysis'] = array(
+	    'title' => 'Statistical Analysis Report',
+ 		'description' => 'View entire site statistical analysis',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments' => array('weekly',0,TRUE),
+	    'access arguments' => array('administer statistical_analysis'),
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['admin/reports/statistical_analysis/weekly'] = array(
+	    'title' => 'Current Week Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments'    => array('weekly',0, TRUE),
+	    'access arguments' => array('administer statistical_analysis'),
+	    'type' => MENU_DEFAULT_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['admin/reports/statistical_analysis/posting'] = array(
+	    'title' => 'Posting Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments'    => array('posting',0, TRUE),
+	    'access arguments' => array('administer statistical_analysis'),
+	    'type' => MENU_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['admin/reports/statistical_analysis/voting'] = array(
+	    'title' => 'Voting Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments'    => array('voting',0, TRUE),
+	    'access arguments' => array('administer statistical_analysis'),
+	    'type' => MENU_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['admin/reports/statistical_analysis/contribution'] = array(
+	    'title' => 'Contribution Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments'    => array('contribution',0, TRUE),
+	    'access arguments' => array('administer statistical_analysis'),
+	    'type' => MENU_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['admin/reports/statistical_analysis/trending'] = array(
+	    'title' => 'Trending Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments'    => array('trending',0, TRUE),
+	    'access arguments' => array('administer statistical_analysis'),
+	    'type' => MENU_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['user/%user/statistical_analysis'] = array(
+	    'title' => 'Statistical Analysis',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments' => array('weekly',1, TRUE),
+	    'access callback' => '_statistical_analysis_user_access',
+	    'access arguments' => array(1),
+		'type' => MENU_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+  	$items['user/%user/statistical_analysis/weekly'] = array(
+	    'title' => 'Current Week Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments' => array('weekly',1, TRUE),
+	    'access callback' => '_statistical_analysis_user_access',
+	    'access arguments' => array(1),
+	    'type' => MENU_DEFAULT_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['user/%user/statistical_analysis/posting'] = array(
+	    'title' => 'Posting Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments' => array('posting',1, TRUE),
+	    'access callback' => '_statistical_analysis_user_access',
+	    'access arguments' => array(1),
+	    'type' => MENU_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+	$items['user/%user/statistical_analysis/voting'] = array(
+	    'title' => 'Voting Statistics',
+	    'page callback' => 'statistical_analysis_page',
+	    'page arguments' => array('voting',1, TRUE),
+	    'access callback' => '_statistical_analysis_user_access',
+	    'access arguments' => array(1),
+	    'type' => MENU_LOCAL_TASK,
+	    'file' => 'statistical_analysis.pages.inc',
+  	);
+  	
+	return $items;
+}
+
+function _statistical_analysis_user_access($account) {
+  	return user_view_access($account) && user_access('access content');
+}
+
+function statistical_analysis_settings() {
+	$form['statistical_analysis_general_settings'] = array(
+		'#title' => t('General Settings'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+	);
+	$form['statistical_analysis_general_settings']['email'] = array(
+		'#title' => t('Email'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
+	);
+	$form['statistical_analysis_general_settings']['email']['statistical_analysis_recipient_email'] = array(
+		'#title' => t('Recipient Email'),
+		'#type' => "textfield",
+		'#size' => 60,
+		'#maxlength' => 50,
+		'#required' => FALSE,
+		'#description' => t('Email to recieve the referral'),
+		'#default_value' => variable_get('statistical_analysis_recipient_email',''),
+	);
+  	$form['statistical_analysis_general_settings']['email']['statistical_analysis_sender_email'] = array(
+       	'#title' => t('Sender Email'),
+        '#type' => "textfield",
+        '#size' => 60,
+        '#maxlength' => 50,
+        '#required' => FALSE,
+        '#description' => t('Email that referral will come from'),
+        '#default_value' => variable_get('statistical_analysis_sender_email',''),
+   	);
+  	$form['statistical_analysis_general_settings']['email']['statistical_analysis_email_subject'] = array(
+      	'#title' => t('Email Subject'),
+       	'#type' => "textfield",
+      	'#size' => 60,
+       	'#maxlength' => 70,
+       	'#required' => FALSE,
+    	'#description' => t('Subject of the email'),
+      	'#default_value' => variable_get('statistical_analysis_email_subject',''),
+   	);
+	$form['statistical_analysis_user_statistic_settings'] = array(
+		'#title' => t('User Statistic Settings'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+	);
+	$form['statistical_analysis_user_statistic_settings']['posting'] = array(
+		'#title' => t('Posting'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
+	);
+	$form['statistical_analysis_user_statistic_settings']['posting']['terms_used_in_posts'] = array(
+		"#title" => t("Amount of terms to show from your blog"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular terms to show from your postings'),
+		"#default_value" => variable_get('terms_used_in_posts','5'),
+	);
+	$form['statistical_analysis_user_statistic_settings']['posting']['terms_used_in_comments'] = array(
+		"#title" => t("Amount of terms to show from blogs you commented on"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular terms to show from blogs you commented on'),
+		"#default_value" => variable_get('terms_used_in_comments','5'),
+	);
+	$form['statistical_analysis_user_statistic_settings']['voting'] = array(
+		'#title' => t('Voting'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
+	);
+	$form['statistical_analysis_user_statistic_settings']['voting']['top_voted_blogs'] = array(
+		"#title" => t("Amount of blogs to show that were top rated"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular terms to show from blogs you commented on'),
+		"#default_value" => variable_get('top_voted_blogs','5'),
+	);
+	$form['statistical_analysis_user_statistic_settings']['voting']['top_voting_terms'] = array(
+		"#title" => t("Amount of terms to show from blogs you voted on"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular terms to show from blogs you voted on'),
+		"#default_value" => variable_get('top_voted_blogs','5'),
+	);
+	$form['statistical_analysis_admin_statistic_settings'] = array(
+		'#title' => t('Admin Statistic Settings'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+	);
+	$form['statistical_analysis_admin_statistic_settings']['contribution'] = array(
+		'#title' => t('Contribution'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
+	);
+	$form['statistical_analysis_admin_statistic_settings']['contribution']['admin_blog_contrib'] = array(
+		"#title" => t("Amount of blog contributors to show"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of blog contributors to show'),
+		"#default_value" => variable_get('admin_blog_contrib','10'),
+	);
+	$form['statistical_analysis_admin_statistic_settings']['contribution']['admin_comment_contrib'] = array(
+		"#title" => t("Amount of comment contributors to show"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of comment contributors to show'),
+		"#default_value" => variable_get('admin_comment_contrib','10'),
+	);
+	$form['statistical_analysis_admin_statistic_settings']['contribution']['admin_vote_contrib'] = array(
+		"#title" => t("Amount of vote contributors to show"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of vote contributors to show'),
+		"#default_value" => variable_get('admin_vote_contrib','10'),
+	);
+	$form['statistical_analysis_admin_statistic_settings']['posting'] = array(
+		'#title' => t('Posting'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
+	);
+	$form['statistical_analysis_admin_statistic_settings']['posting']['admin_terms_used_in_posts'] = array(
+		"#title" => t("Amount of terms to show from all blogs"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular terms to show from all postings'),
+		"#default_value" => variable_get('admin_terms_used_in_posts','10'),
+	);
+	$form['statistical_analysis_admin_statistic_settings']['posting']['admin_terms_used_in_comments'] = array(
+		"#title" => t("Amount of terms to show from blogs all users commented on"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular terms to show from blogs all users commented on'),
+		"#default_value" => variable_get('admin_terms_used_in_comments','10'),
+	);
+	$form['statistical_analysis_admin_statistic_settings']['voting'] = array(
+		'#title' => t('Voting'),
+		'#type' => "fieldset",
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
+	);
+	$form['statistical_analysis_admin_statistic_settings']['voting']['admin_top_voted_blogs'] = array(
+		"#title" => t("Amount of blogs to show that were top rated"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular blogs to show'),
+		"#default_value" => variable_get('admin_top_voted_blogs','10'),
+	);
+	$form['statistical_analysis_admin_statistic_settings']['voting']['admin_top_voting_terms'] = array(
+		"#title" => t("Amount of terms to show from blogs all users voted on"),
+		"#type" => "textfield",
+		"#size" => 20,
+		"#maxlength" => 20,
+		"#required" => FALSE,
+		"#description" => t('Amount of most popular terms to show from blogs all users voted on'),
+		"#default_value" => variable_get('admin_top_voting_terms','10'),
+	);
+	return system_settings_form($form);
+}

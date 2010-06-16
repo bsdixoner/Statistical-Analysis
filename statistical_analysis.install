@@ -1,0 +1,70 @@
+<?php 
+
+function statistical_analysis_schema() {
+	
+	$schema['statistical_analysis'] = array(
+		'description' => t('The base table for statistical analysis.'),
+			'fields' => array(
+				'sid' => array(
+					'description' => t('The primary identifier for a week.'),
+					'type' => 'serial',
+					'unsigned' => TRUE,
+					'not null' => TRUE),
+				'start_date' => array(
+					'description' => t('Start date for the week collected.'),
+					'type' => 'datetime',
+					'not null' => TRUE),
+				'end_date' => array(
+					'description' => t('End date for the week collected.'),
+					'type' => 'datetime',
+					'not null' => TRUE),
+				'blogs_posted' => array(
+					'description' => t('Blogs posted for the week.'),
+					'type' => 'int',
+					'not null' => FALSE,
+					'default' => 0),
+				'comments_posted' => array(
+					'description' => t('Comments posted for the week.'),
+					'type' => 'int',
+					'not null' => FALSE,
+					'default' => 0),
+				'statuses_posted' => array(
+					'description' => t('Statuses posted for the week.'),
+					'type' => 'int',
+					'not null' => FALSE,
+					'default' => 0),
+				'reads' => array(
+					'description' => t('Reads for the week.'),
+					'type' => 'int',
+					'not null' => FALSE,
+					'default' => 0),
+				'votes_casted' => array(
+					'description' => t('Votes casted for the week.'),
+					'type' => 'int',
+					'not null' => FALSE,
+					'default' => 0),
+				'vote_average' => array(
+					'description' => t('Vote average for the week.'),
+					'type' => 'int',
+					'not null' => FALSE,
+					'default' => 0),
+			),
+		'unique keys' => array(
+			'start_date'	=> array('start_date'),
+			'end_date'		=> array('end_date'),		
+		),
+		'primary key' => array('sid'),
+	);
+	return $schema;
+}
+
+function statistical_analysis_install() {
+	drupal_install_schema('statistical_analysis');
+	drupal_cron_run();
+}
+
+function statistical_analysis_uninstall() {
+	drupal_uninstall_schema('statistical_analysis');
+}
+
+?>
