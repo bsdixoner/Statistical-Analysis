@@ -1,1 +1,16 @@
-Must fill
+Statistical Analysis is a Drupal 6 module aimed at providing a site administrator and its users with a way to identify interactions in an easy to use interface.
+
+Installation of the module is like any other Drupal module (sites/all/modules/.).
+
+For the module to work best it is best to have the following other modules installed (NOT required):
+- Activity
+- Facebook_status
+- Votingapi
+- Tagadelic
+- Community_tags
+- Taxonomy
+- Charts
+- Open_flash_chart_api
+
+These additional modules further add information to the statistics shown to the user and administrator.
+
